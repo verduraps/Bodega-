@@ -977,9 +977,23 @@ function renderAll(){ renderProducts(); renderPOS(); renderCart(); renderDashboa
 <script>
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
-    navigator.serviceWorker.register('./service-worker.js').catch(() => {});
+    navigator.serviceWorker.register('./service-worker.js')
+      .then(reg => {
+        console.log('Service Worker registrado para GitHub Pages');
+        reg.addEventListener('updatefound', () => {
+          const newWorker = reg.installing;
+          if (!newWorker) return;
+          newWorker.addEventListener('statechange', () => {
+            if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+              const aceptar = confirm('Hay una nueva versión de Bodega Manager. ¿Actualizar ahora?');
+              if (aceptar) newWorker.postMessage({ type: 'SKIP_WAITING' });
+            }
+          });
+        });
+      })
+      .catch(err => console.log('Error registrando Service Worker:', err));
   });
+  navigator.serviceWorker.addEventListener('controllerchange', () => window.location.reload());
 }
 </script>
-</body>
 </html>
