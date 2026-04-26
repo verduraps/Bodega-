@@ -1,0 +1,26 @@
+{
+  "name": "Bodega Manager - Control de Stock y Ventas",
+  "short_name": "Bodega",
+  "description": "Sistema instalable para control de stock, ventas y bodega.",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#0d0c0a",
+  "theme_color": "#d4541b",
+  "orientation": "portrait-primary",
+  "lang": "es-PY",
+  "icons": [
+    {
+      "src": "icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

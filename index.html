@@ -3,6 +3,11 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="theme-color" content="#d4541b">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Bodega Manager">
+<link rel="manifest" href="manifest.json">
 <title>Bodega Manager · Control de Stock y Ventas</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -435,6 +440,20 @@ const SEED = [
   {cat:'cerveza',brand:'Ñande',variant:'Roja',size:'500ml',price:9000,stock:18,min:12},
   {cat:'cerveza',brand:'Ñande',variant:'Negra',size:'500ml',price:9000,stock:12,min:12},
 
+  // CERVEZAS — TOP 2025 agregadas sin precio para completar por el dueño
+  {cat:'cerveza',brand:'Munich',variant:'Lager',size:'1L',price:0,stock:0,min:12},
+  {cat:'cerveza',brand:'Munich',variant:'Lager',size:'473ml lata',price:0,stock:0,min:12},
+  {cat:'cerveza',brand:'Miller',variant:'Lite',size:'355ml',price:0,stock:0,min:12},
+  {cat:'cerveza',brand:'Patagonia',variant:'Amber Lager',size:'730ml',price:0,stock:0,min:6},
+  {cat:'cerveza',brand:'Patagonia',variant:'24.7',size:'473ml',price:0,stock:0,min:6},
+  {cat:'cerveza',brand:'Eisenbahn',variant:'Pilsen',size:'355ml',price:0,stock:0,min:6},
+  {cat:'cerveza',brand:'Amstel',variant:'Lager',size:'473ml',price:0,stock:0,min:12},
+  {cat:'cerveza',brand:'Sol',variant:'Premium',size:'355ml',price:0,stock:0,min:12},
+  {cat:'cerveza',brand:'Victoria',variant:'Pilsen',size:'1L',price:0,stock:0,min:12},
+  {cat:'cerveza',brand:'Norte',variant:'Pilsen',size:'1L',price:0,stock:0,min:12},
+  {cat:'cerveza',brand:'Polar',variant:'Pilsen',size:'1L',price:0,stock:0,min:12},
+  {cat:'cerveza',brand:'Brahma',variant:'0.0 Sin alcohol',size:'355ml',price:0,stock:0,min:6},
+
   // GASEOSAS — Coca-Cola lidera, Pulp y Niko son las locales fuertes
   {cat:'gaseosa',brand:'Coca-Cola',variant:'Original',size:'2.25L',price:11000,stock:40,min:18},
   {cat:'gaseosa',brand:'Coca-Cola',variant:'Original',size:'1.5L',price:8500,stock:60,min:24},
@@ -518,6 +537,7 @@ const SEED = [
 /* ========= ESTADO + STORAGE ========= */
 const STORAGE_KEY = 'bodega_state_v1';
 let state = loadState();
+mergeSeedProducts();
 function loadState(){
   try{ const raw = localStorage.getItem(STORAGE_KEY); if(raw) return JSON.parse(raw); }catch(e){}
   return {
@@ -526,6 +546,25 @@ function loadState(){
   };
 }
 function saveState(){ try{ localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }catch(e){} }
+
+function mergeSeedProducts(){
+  // Si el navegador ya tenía datos guardados, agrega solamente los productos nuevos del SEED.
+  let changed=false;
+  state.products = state.products || [];
+  SEED.forEach(seed=>{
+    const exists = state.products.some(p =>
+      p.cat===seed.cat && p.brand===seed.brand && p.variant===seed.variant && p.size===seed.size
+    );
+    if(!exists){
+      const id='P'+String(state.nextId++).padStart(4,'0');
+      const code='BOD'+String(state.products.length+1).padStart(4,'0');
+      state.products.push({...seed,id,code});
+      changed=true;
+    }
+  });
+  if(changed) saveState();
+}
+
 
 let session={role:null,user:null}, cart=[], editingId=null, activePCat='all', activeSCat='all';
 
@@ -683,7 +722,7 @@ function saveProduct(){
     min:+document.getElementById('fMin').value||0,
     code:document.getElementById('fCode').value.trim(),
   };
-  if(!data.brand||!data.size||data.price<=0){ toast('Completá marca, tamaño y precio'); return; }
+  if(!data.brand||!data.size){ toast('Completá marca y tamaño'); return; }
   if(editingId){
     Object.assign(state.products.find(x=>x.id===editingId),data);
     toast('Producto actualizado');
@@ -933,6 +972,14 @@ function renderAlertas(){
 /* ========= RENDER ALL ========= */
 function renderAll(){ renderProducts(); renderPOS(); renderCart(); renderDashboard(); renderVentas(); renderAlertas(); }
 
+</script>
+
+<script>
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('./service-worker.js').catch(() => {});
+  });
+}
 </script>
 </body>
 </html>
