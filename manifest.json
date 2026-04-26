@@ -1,7 +1,7 @@
 {
   "name": "Bodega Manager - Control de Stock y Ventas",
   "short_name": "Bodega",
-  "description": "Sistema instalable para control de stock, ventas y bodega.",
+  "description": "Sistema de control de stock, ventas y turnos para bodega.",
   "start_url": "./index.html",
   "scope": "./",
   "display": "standalone",
@@ -9,18 +9,40 @@
   "theme_color": "#d4541b",
   "orientation": "portrait-primary",
   "lang": "es-PY",
+  "categories": ["business", "productivity"],
   "icons": [
     {
-      "src": "icons/icon-192.png",
+      "src": "icon-192.png",
       "sizes": "192x192",
       "type": "image/png",
-      "purpose": "any maskable"
+      "purpose": "any"
     },
     {
-      "src": "icons/icon-512.png",
+      "src": "icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "icon-512.png",
       "sizes": "512x512",
       "type": "image/png",
-      "purpose": "any maskable"
+      "purpose": "any"
+    },
+    {
+      "src": "icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Punto de venta",
+      "short_name": "Venta",
+      "description": "Ir directo al punto de venta",
+      "url": "./index.html#pos",
+      "icons": [{ "src": "icon-192.png", "sizes": "192x192" }]
     }
   ]
 }

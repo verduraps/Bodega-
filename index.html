@@ -410,12 +410,32 @@
     <section class="panel admin-only" id="panel-ventas">
       <div class="section-head">
         <h2>Historial <em>de ventas</em></h2>
-        <div class="meta"><span id="ventasCount">0</span> ventas</div>
+        <div class="meta"><span id="ventasCount">0</span> ventas · <span id="ventasTotal">Gs. 0</span></div>
+      </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px">
+        <button class="filter-chip active" data-rango="hoy">Hoy</button>
+        <button class="filter-chip" data-rango="ayer">Ayer</button>
+        <button class="filter-chip" data-rango="semana">Esta semana</button>
+        <button class="filter-chip" data-rango="mes">Este mes</button>
+        <button class="filter-chip" data-rango="personalizado">Personalizado</button>
+      </div>
+      <div id="rangoPersonalizado" style="display:none;gap:10px;flex-wrap:wrap;margin-bottom:14px;align-items:center;background:var(--bg-2);border:1px solid var(--line);padding:14px">
+        <div style="font-family:JetBrains Mono,monospace;font-size:10px;letter-spacing:2px;color:var(--muted);text-transform:uppercase">Desde</div>
+        <input type="date" id="filtroDesde" class="search" style="flex:none;width:150px">
+        <div style="font-family:JetBrains Mono,monospace;font-size:10px;letter-spacing:2px;color:var(--muted);text-transform:uppercase">Hasta</div>
+        <input type="date" id="filtroHasta" class="search" style="flex:none;width:150px">
+        <button class="btn-primary" id="aplicarRango">Aplicar</button>
       </div>
       <div class="toolbar">
-        <input type="date" id="filtroFecha" class="search" style="flex:none;width:160px">
-        <select id="filtroVendedor" class="search" style="flex:none;width:160px"><option value="">Todos los vendedores</option></select>
-        <button class="btn-ghost" id="exportarBtn">📋 Exportar WhatsApp</button>
+        <select id="filtroVendedor" class="search" style="flex:none;width:180px"><option value="">Todos los vendedores</option></select>
+        <button class="btn-ghost" id="exportarBtn">📋 WhatsApp</button>
+        <button class="btn-primary" id="imprimirReporteBtn">&#128424; Imprimir reporte</button>
+      </div>
+      <div id="resumenPeriodo" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:1px;background:var(--line);border:1px solid var(--line);margin-bottom:20px">
+        <div class="stat" style="padding:16px 18px"><div class="lbl">Ventas</div><div class="val" style="font-size:28px" id="rpVentas">0</div></div>
+        <div class="stat" style="padding:16px 18px"><div class="lbl">Unidades</div><div class="val" style="font-size:28px" id="rpUnidades">0</div></div>
+        <div class="stat" style="padding:16px 18px"><div class="lbl">Total recaudado</div><div class="val" style="font-size:28px" id="rpTotal">Gs. 0</div></div>
+        <div class="stat" style="padding:16px 18px"><div class="lbl">Ticket promedio</div><div class="val" style="font-size:28px" id="rpPromedio">Gs. 0</div></div>
       </div>
       <div class="table-wrap">
         <table>
@@ -1205,33 +1225,108 @@ function renderDashboard(){
 }
 
 /* ═══════════════════════════════════════
-   VENTAS HISTORIAL
+   VENTAS HISTORIAL + REPORTES
 ═══════════════════════════════════════ */
+
+// Estado del rango activo
+let rangoActivo = 'hoy';
+let rangoDesde = null;
+let rangoHasta = null;
+
+function getRangoFechas(){
+  const hoy = new Date(); hoy.setHours(0,0,0,0);
+  const manana = new Date(hoy); manana.setDate(hoy.getDate()+1);
+  if(rangoActivo==='hoy') return [hoy, manana];
+  if(rangoActivo==='ayer'){
+    const ayer=new Date(hoy); ayer.setDate(hoy.getDate()-1);
+    return [ayer, hoy];
+  }
+  if(rangoActivo==='semana'){
+    const lunes=new Date(hoy);
+    lunes.setDate(hoy.getDate()-((hoy.getDay()+6)%7));
+    return [lunes, manana];
+  }
+  if(rangoActivo==='mes'){
+    const inicio=new Date(hoy.getFullYear(),hoy.getMonth(),1);
+    return [inicio, manana];
+  }
+  if(rangoActivo==='personalizado' && rangoDesde && rangoHasta){
+    const d=new Date(rangoDesde+'T00:00:00');
+    const h=new Date(rangoHasta+'T23:59:59');
+    return [d, h];
+  }
+  return [hoy, manana];
+}
+
+function getRangoLabel(){
+  const opts={hoy:'Hoy',ayer:'Ayer',semana:'Esta semana',mes:'Este mes'};
+  if(rangoActivo==='personalizado' && rangoDesde && rangoHasta)
+    return rangoDesde+' → '+rangoHasta;
+  return opts[rangoActivo]||rangoActivo;
+}
+
+// Chips de rango
+document.querySelectorAll('[data-rango]').forEach(b=>{
+  b.addEventListener('click',()=>{
+    document.querySelectorAll('[data-rango]').forEach(x=>x.classList.remove('active'));
+    b.classList.add('active');
+    rangoActivo=b.dataset.rango;
+    const rp=document.getElementById('rangoPersonalizado');
+    rp.style.display=rangoActivo==='personalizado'?'flex':'none';
+    if(rangoActivo!=='personalizado') renderVentas();
+  });
+});
+
+document.getElementById('aplicarRango').addEventListener('click',()=>{
+  rangoDesde=document.getElementById('filtroDesde').value;
+  rangoHasta=document.getElementById('filtroHasta').value;
+  if(!rangoDesde||!rangoHasta){toast('Seleccioná fecha desde y hasta');return;}
+  renderVentas();
+});
+
 function renderVentas(){
-  // Llenar select vendedores
+  // Select vendedores
   const sel=document.getElementById('filtroVendedor');
   const currentV=sel.value;
-  sel.innerHTML='<option value="">Todos</option>'+
+  sel.innerHTML='<option value="">Todos los vendedores</option>'+
     [...new Set(state.sales.map(s=>s.user))].map(u=>`<option value="${esc(u)}">${esc(u)}</option>`).join('');
-  if(currentV)sel.value=currentV;
-
-  const fechaF=document.getElementById('filtroFecha').value;
+  if(currentV) sel.value=currentV;
   const vendF=sel.value;
-  let list=state.sales.slice();
-  if(fechaF)list=list.filter(s=>s.date.startsWith(fechaF));
-  if(vendF)list=list.filter(s=>s.user===vendF);
 
+  // Filtrar por rango
+  const [desde, hasta] = getRangoFechas();
+  let list=state.sales.filter(s=>{
+    const d=new Date(s.date);
+    return d>=desde && d<=hasta;
+  });
+  if(vendF) list=list.filter(s=>s.user===vendF);
+  list.sort((a,b)=>new Date(b.date)-new Date(a.date));
+
+  // Resumen del período
+  const totalGs=list.reduce((s,v)=>s+v.total,0);
+  const totalU=list.reduce((s,v)=>s+v.items.reduce((x,i)=>x+i.qty,0),0);
+  const promedio=list.length?totalGs/list.length:0;
   document.getElementById('ventasCount').textContent=list.length;
+  document.getElementById('ventasTotal').textContent=fmt(totalGs);
+  document.getElementById('rpVentas').textContent=list.length;
+  document.getElementById('rpUnidades').textContent=totalU.toLocaleString('es-PY');
+  document.getElementById('rpTotal').textContent=fmt(totalGs);
+  document.getElementById('rpPromedio').textContent=fmt(promedio);
+
+  // Tabla
   const tb=document.getElementById('ventasTbody');
-  if(list.length===0){tb.innerHTML='<tr><td colspan="6" style="text-align:center;padding:36px;color:var(--muted);font-style:italic">Sin ventas</td></tr>';return;}
+  if(list.length===0){
+    tb.innerHTML='<tr><td colspan="6" style="text-align:center;padding:36px;color:var(--muted);font-style:italic">Sin ventas en este período</td></tr>';
+    return;
+  }
   tb.innerHTML=list.map(s=>{
     const d=new Date(s.date);
     return`<tr>
-      <td style="font-family:'JetBrains Mono',monospace;color:var(--accent-2)">${s.id}</td>
+      <td style="font-family:JetBrains Mono,monospace;color:var(--accent-2)">${s.id}</td>
       <td>${d.toLocaleDateString('es-PY')} ${d.toLocaleTimeString('es-PY',{hour:'2-digit',minute:'2-digit'})}</td>
       <td>${esc(s.user)}</td>
       <td>${s.items.reduce((x,i)=>x+i.qty,0)}</td>
-      <td style="font-family:'Fraunces',serif;font-weight:600">${fmt(s.total)}</td>
+      <td style="font-family:Fraunces,serif;font-weight:600">${fmt(s.total)}</td>
       <td><button class="icon-btn" data-view="${s.id}">Ver</button></td>
     </tr>`;
   }).join('');
@@ -1239,26 +1334,173 @@ function renderVentas(){
     showTicket(state.sales.find(s=>s.id===b.dataset.view));
   }));
 }
-document.getElementById('filtroFecha').addEventListener('change',renderVentas);
-document.getElementById('filtroVendedor').addEventListener('change',renderVentas);
 
-// EXPORTAR A WHATSAPP
+// WhatsApp export
 document.getElementById('exportarBtn').addEventListener('click',()=>{
-  const fecha=document.getElementById('filtroFecha').value||hoyStr();
-  const lista=state.sales.filter(s=>s.date.startsWith(fecha));
-  if(lista.length===0){toast('No hay ventas para exportar');return;}
+  const [desde,hasta]=getRangoFechas();
+  const lista=state.sales.filter(s=>{const d=new Date(s.date);return d>=desde&&d<=hasta;});
+  if(lista.length===0){toast('No hay ventas en este período');return;}
   const total=lista.reduce((s,v)=>s+v.total,0);
   const unidades=lista.reduce((s,v)=>s+v.items.reduce((x,i)=>x+i.qty,0),0);
-  // Agrupar por vendedor
   const porV={};
   lista.forEach(s=>{if(!porV[s.user])porV[s.user]={total:0,ventas:0};porV[s.user].total+=s.total;porV[s.user].ventas++;});
-  let msg=`*BODEGA — Reporte ${fecha}*\n\n`;
-  msg+=`Total ventas: *${lista.length}*\nTotal unidades: *${unidades}*\n*TOTAL: Gs. ${total.toLocaleString('es-PY')}*\n\n`;
-  msg+='*Por vendedor:*\n';
-  Object.entries(porV).forEach(([nom,d])=>{msg+=`• ${nom}: ${d.ventas} ventas → Gs. ${d.total.toLocaleString('es-PY')}\n`;});
-  const url='https://wa.me/?text='+encodeURIComponent(msg);
-  window.open(url,'_blank');
+  const porCat={};
+  lista.forEach(s=>s.items.forEach(i=>{
+    const p=state.products.find(x=>x.id===i.id);
+    const cat=p?p.cat:i.brand;
+    if(!porCat[cat])porCat[cat]={qty:0,total:0};
+    porCat[cat].qty+=i.qty;porCat[cat].total+=i.price*i.qty;
+  }));
+  let msg=`*BODEGA — Reporte ${getRangoLabel()}*
+
+`;
+  msg+=`📊 Ventas: *${lista.length}* | Unidades: *${unidades}*
+`;
+  msg+=`💰 *TOTAL: Gs. ${total.toLocaleString('es-PY')}*
+
+`;
+  msg+=`*Por vendedor:*
+`;
+  Object.entries(porV).forEach(([n,d])=>{msg+=`• ${n}: ${d.ventas} ventas → Gs. ${d.total.toLocaleString('es-PY')}
+`;});
+  msg+=`
+*Por categoría:*
+`;
+  Object.entries(porCat).sort((a,b)=>b[1].total-a[1].total).forEach(([c,d])=>{
+    msg+=`• ${c}: ${d.qty} u. → Gs. ${d.total.toLocaleString('es-PY')}
+`;
+  });
+  window.open('https://wa.me/?text='+encodeURIComponent(msg),'_blank');
 });
+
+// Imprimir reporte
+document.getElementById('imprimirReporteBtn').addEventListener('click',()=>{
+  const [desde,hasta]=getRangoFechas();
+  const vendF=document.getElementById('filtroVendedor').value;
+  let lista=state.sales.filter(s=>{const d=new Date(s.date);return d>=desde&&d<=hasta;});
+  if(vendF) lista=lista.filter(s=>s.user===vendF);
+  lista.sort((a,b)=>new Date(a.date)-new Date(b.date));
+  if(lista.length===0){toast('Sin ventas para imprimir');return;}
+
+  const total=lista.reduce((s,v)=>s+v.total,0);
+  const unidades=lista.reduce((s,v)=>s+v.items.reduce((x,i)=>x+i.qty,0),0);
+  const promedio=lista.length?total/lista.length:0;
+
+  // Por vendedor
+  const porV={};
+  lista.forEach(s=>{if(!porV[s.user])porV[s.user]={total:0,ventas:0,unidades:0};
+    porV[s.user].total+=s.total;porV[s.user].ventas++;
+    porV[s.user].unidades+=s.items.reduce((x,i)=>x+i.qty,0);});
+
+  // Top 10 productos del período
+  const porProd={};
+  lista.forEach(s=>s.items.forEach(i=>{
+    if(!porProd[i.id])porProd[i.id]={name:i.brand+' '+i.variant,size:i.size,qty:0,total:0};
+    porProd[i.id].qty+=i.qty;porProd[i.id].total+=i.price*i.qty;
+  }));
+  const top10=Object.values(porProd).sort((a,b)=>b.total-a.total).slice(0,10);
+
+  // Generar HTML del reporte
+  const html=`<!DOCTYPE html>
+<html lang="es"><head><meta charset="UTF-8">
+<title>Reporte Bodega — ${getRangoLabel()}</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:Georgia,serif;color:#1a1814;background:#fff;padding:32px;font-size:13px}
+  .header{text-align:center;border-bottom:3px double #1a1814;padding-bottom:20px;margin-bottom:24px}
+  .header h1{font-size:28px;font-weight:700;letter-spacing:-1px}
+  .header .sub{font-family:monospace;font-size:11px;letter-spacing:2px;text-transform:uppercase;color:#7a7060;margin-top:6px}
+  .header .periodo{font-size:16px;font-weight:600;margin-top:10px;color:#d4541b}
+  .stats{display:grid;grid-template-columns:repeat(4,1fr);gap:0;border:1px solid #1a1814;margin-bottom:24px}
+  .stat{padding:14px 16px;border-right:1px solid #1a1814;text-align:center}
+  .stat:last-child{border-right:none}
+  .stat .lbl{font-family:monospace;font-size:9px;letter-spacing:2px;text-transform:uppercase;color:#7a7060}
+  .stat .val{font-size:22px;font-weight:700;margin-top:6px}
+  h2{font-size:14px;font-family:monospace;letter-spacing:2px;text-transform:uppercase;
+    color:#7a7060;border-bottom:1px solid #ccc;padding-bottom:8px;margin:20px 0 12px}
+  table{width:100%;border-collapse:collapse;font-size:12px}
+  th{background:#1a1814;color:#f4ede0;padding:8px 10px;text-align:left;font-family:monospace;font-size:9px;letter-spacing:1.5px;text-transform:uppercase}
+  td{padding:8px 10px;border-bottom:1px solid #eee}
+  tr:nth-child(even) td{background:#faf8f5}
+  .total-row td{font-weight:700;background:#fff8f0!important;border-top:2px solid #1a1814}
+  .vendedor-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:8px}
+  .vcard{border:1px solid #ccc;padding:12px}
+  .vcard .vn{font-weight:700;font-size:14px}
+  .vcard .vs{font-family:monospace;font-size:11px;color:#7a7060;margin-top:4px}
+  .vcard .vt{font-size:18px;font-weight:700;color:#d4541b;margin-top:6px}
+  .footer{margin-top:32px;text-align:center;font-family:monospace;font-size:10px;color:#aaa;border-top:1px solid #eee;padding-top:16px}
+  @media print{body{padding:16px}button{display:none}}
+</style>
+</head><body>
+<div class="header">
+  <div class="sub">Bodega Manager · Sistema de Control</div>
+  <h1>Reporte de Ventas</h1>
+  <div class="periodo">${getRangoLabel()}</div>
+  <div class="sub" style="margin-top:8px">Generado: ${new Date().toLocaleString('es-PY')}</div>
+</div>
+
+<div class="stats">
+  <div class="stat"><div class="lbl">Transacciones</div><div class="val">${lista.length}</div></div>
+  <div class="stat"><div class="lbl">Unidades vendidas</div><div class="val">${unidades.toLocaleString('es-PY')}</div></div>
+  <div class="stat"><div class="lbl">Total recaudado</div><div class="val" style="font-size:16px">Gs. ${total.toLocaleString('es-PY')}</div></div>
+  <div class="stat"><div class="lbl">Ticket promedio</div><div class="val" style="font-size:16px">Gs. ${Math.round(promedio).toLocaleString('es-PY')}</div></div>
+</div>
+
+<h2>Por vendedor</h2>
+<div class="vendedor-grid">
+  ${Object.entries(porV).map(([n,d])=>`
+    <div class="vcard">
+      <div class="vn">${n}</div>
+      <div class="vs">${d.ventas} ventas · ${d.unidades.toLocaleString('es-PY')} unidades</div>
+      <div class="vt">Gs. ${d.total.toLocaleString('es-PY')}</div>
+    </div>`).join('')}
+</div>
+
+<h2>Top 10 productos más vendidos</h2>
+<table>
+  <thead><tr><th>#</th><th>Producto</th><th>Tamaño</th><th>Unidades</th><th>Total</th></tr></thead>
+  <tbody>
+    ${top10.map((p,i)=>`<tr>
+      <td>${i+1}</td>
+      <td><strong>${p.name}</strong></td>
+      <td>${p.size}</td>
+      <td>${p.qty.toLocaleString('es-PY')}</td>
+      <td>Gs. ${p.total.toLocaleString('es-PY')}</td>
+    </tr>`).join('')}
+  </tbody>
+</table>
+
+<h2>Detalle de todas las ventas</h2>
+<table>
+  <thead><tr><th>Ticket</th><th>Fecha/Hora</th><th>Vendedor</th><th>Unid.</th><th>Total</th></tr></thead>
+  <tbody>
+    ${lista.map(s=>{
+      const d=new Date(s.date);
+      return`<tr>
+        <td><strong>${s.id}</strong></td>
+        <td>${d.toLocaleDateString('es-PY')} ${d.toLocaleTimeString('es-PY',{hour:'2-digit',minute:'2-digit'})}</td>
+        <td>${s.user}</td>
+        <td>${s.items.reduce((x,i)=>x+i.qty,0)}</td>
+        <td>Gs. ${s.total.toLocaleString('es-PY')}</td>
+      </tr>`;}).join('')}
+    <tr class="total-row">
+      <td colspan="3">TOTAL</td>
+      <td>${unidades.toLocaleString('es-PY')}</td>
+      <td>Gs. ${total.toLocaleString('es-PY')}</td>
+    </tr>
+  </tbody>
+</table>
+
+<div class="footer">Bodega Manager · ${new Date().getFullYear()} · Reporte generado automáticamente</div>
+<script>window.onload=()=>window.print()<\/script>
+</body></html>`;
+
+  const w=window.open('','_blank','width=900,height=700');
+  w.document.write(html);
+  w.document.close();
+});
+
+document.getElementById('filtroVendedor').addEventListener('change',renderVentas);
 
 /* ═══════════════════════════════════════
    TURNOS
@@ -1400,6 +1642,225 @@ function renderAll(){
 buildLoginSelect();
 
 </script>
+
+<!-- ════ SUPABASE SDK ════ -->
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+
+<script>
+/* ═══════════════════════════════════════════════════
+   SUPABASE — SYNC HÍBRIDA (offline-first)
+   • Todo se guarda PRIMERO en localStorage
+   • Cuando hay internet, sincroniza con Supabase
+   • Cola de pendientes para cuando no hay internet
+   • El admin ve datos desde cualquier dispositivo
+═══════════════════════════════════════════════════ */
+const SB_URL='https://hutyqmcrnuwmbinlkftw.supabase.co';
+const SB_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imh1dHlxbWNybnV3bWJpbmxrZnR3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzcxNzQ0NzIsImV4cCI6MjA5Mjc1MDQ3Mn0.Nn6rojyr5mGINU2QUm8Ui7ktggKJucaNgkM0FnxV-vs';
+const sb=supabase.createClient(SB_URL,SB_KEY);
+let isOnline=navigator.onLine,isSyncing=false;
+
+/* ── Indicador online/offline ── */
+function updateOnlineIndicator(){
+  isOnline=navigator.onLine;
+  let dot=document.getElementById('onlineDot');
+  if(!dot){
+    dot=document.createElement('div');dot.id='onlineDot';
+    dot.style.cssText='font-family:JetBrains Mono,monospace;font-size:10px;padding:4px 9px;border-radius:2px;border:1px solid;';
+    document.querySelector('.topbar .right').prepend(dot);
+  }
+  if(isOnline){
+    dot.textContent='● ONLINE';dot.style.color='#5fca6e';
+    dot.style.borderColor='#5fca6e';dot.style.background='rgba(45,122,58,.15)';
+    flushQueue();
+  }else{
+    dot.textContent='○ OFFLINE';dot.style.color='#f0a830';
+    dot.style.borderColor='#f0a830';dot.style.background='rgba(240,168,48,.1)';
+  }
+}
+window.addEventListener('online',updateOnlineIndicator);
+window.addEventListener('offline',updateOnlineIndicator);
+
+/* ── Cola offline ── */
+const QUEUE_KEY='bodega_sync_queue';
+function getQueue(){try{return JSON.parse(localStorage.getItem(QUEUE_KEY)||'[]');}catch(e){return[];}}
+function saveQueue(q){localStorage.setItem(QUEUE_KEY,JSON.stringify(q));}
+function enqueue(tabla,op,payload){const q=getQueue();q.push({tabla,op,payload,ts:new Date().toISOString()});saveQueue(q);}
+
+async function flushQueue(){
+  if(!isOnline||isSyncing)return;
+  const q=getQueue();if(q.length===0)return;
+  isSyncing=true;const failed=[];
+  for(const item of q){
+    try{
+      if(item.op==='upsert'){
+        const{error}=await sb.from(item.tabla).upsert(item.payload,{onConflict:'id'});
+        if(error)throw error;
+      }else if(item.op==='delete'){
+        const{error}=await sb.from(item.tabla).delete().eq('id',item.payload.id);
+        if(error)throw error;
+      }
+    }catch(e){failed.push(item);}
+  }
+  saveQueue(failed);isSyncing=false;
+  if(failed.length===0&&q.length>0)toast('☁ Datos sincronizados','ok');
+}
+
+/* ── Sync por tabla ── */
+async function sbUpsert(tabla,row){
+  if(isOnline){const{error}=await sb.from(tabla).upsert(row,{onConflict:'id'});if(error)enqueue(tabla,'upsert',row);}
+  else enqueue(tabla,'upsert',row);
+}
+async function sbDelete(tabla,id){
+  if(isOnline){await sb.from(tabla).delete().eq('id',id);}
+  else enqueue(tabla,'delete',{id});
+}
+
+function toProductRow(p){return{id:p.id,code:p.code,cat:p.cat,brand:p.brand,variant:p.variant,size:p.size,price:p.price,stock:p.stock,min:p.min};}
+function toVentaRow(s){return{id:s.id,date:s.date,user_name:s.user,user_id:s.userId,turno_id:s.turnoId,items:s.items,total:s.total};}
+function toTurnoRow(t){return{id:t.id,user_id:t.userId,vendedor:t.vendedor,apertura:t.apertura,cierre:t.cierre||null,cerrado:t.cerrado,efectivo_inicial:t.efectivoInicial,efectivo_final:t.efectivoFinal||null,esperado:t.esperado||null,diferencia:t.diferencia||null,total_vendido:t.totalVendido||0,cant_ventas:t.cantVentas||0,nota:t.nota||'',obs:t.obs||''};}
+function toVendRow(v){return{id:v.id,nombre:v.nombre,pin:v.pin,role:v.role||'vendedor',activo:true};}
+
+/* ── Carga inicial desde Supabase ── */
+async function loadFromSupabase(){
+  if(!isOnline)return;
+  try{
+    const[pRes,vRes,sRes,tRes,cRes]=await Promise.all([
+      sb.from('productos').select('*'),
+      sb.from('vendedores').select('*').eq('activo',true),
+      sb.from('ventas').select('*').order('date',{ascending:false}).limit(500),
+      sb.from('turnos').select('*').order('apertura',{ascending:false}).limit(200),
+      sb.from('config').select('*'),
+    ]);
+    let changed=false;
+
+    if(pRes.data&&pRes.data.length>0){
+      pRes.data.forEach(row=>{
+        const local=state.products.find(p=>p.id===row.id);
+        if(local){Object.assign(local,{price:row.price,stock:row.stock,min:row.min,brand:row.brand,variant:row.variant,size:row.size,cat:row.cat});}
+        else state.products.push({id:row.id,code:row.code||row.id,cat:row.cat,brand:row.brand,variant:row.variant||'',size:row.size||'',price:row.price||0,stock:row.stock||0,min:row.min||5});
+      });changed=true;
+    }else if(pRes.data&&pRes.data.length===0){
+      for(const p of state.products)await sbUpsert('productos',toProductRow(p));
+    }
+
+    if(vRes.data&&vRes.data.length>0){
+      state.vendedores=vRes.data.map(v=>({id:v.id,nombre:v.nombre,pin:v.pin,role:v.role||'vendedor'}));changed=true;
+    }else if(vRes.data&&vRes.data.length===0){
+      for(const v of state.vendedores)await sbUpsert('vendedores',toVendRow(v));
+    }
+
+    if(sRes.data&&sRes.data.length>0){
+      const remoteIds=new Set(sRes.data.map(s=>s.id));
+      const localIds=new Set(state.sales.map(s=>s.id));
+      for(const s of state.sales.filter(s=>!remoteIds.has(s.id)))await sbUpsert('ventas',toVentaRow(s));
+      sRes.data.filter(s=>!localIds.has(s.id)).forEach(row=>{
+        state.sales.push({id:row.id,date:row.date,user:row.user_name,userId:row.user_id,turnoId:row.turno_id,items:row.items||[],total:row.total||0});
+      });
+      state.sales.sort((a,b)=>new Date(b.date)-new Date(a.date));changed=true;
+    }
+
+    if(tRes.data&&tRes.data.length>0){
+      const remoteIds=new Set(tRes.data.map(t=>t.id));
+      const localIds=new Set(state.turnos.map(t=>t.id));
+      for(const t of state.turnos.filter(t=>!remoteIds.has(t.id)))await sbUpsert('turnos',toTurnoRow(t));
+      tRes.data.filter(t=>!localIds.has(t.id)).forEach(row=>{
+        state.turnos.push({id:row.id,userId:row.user_id,vendedor:row.vendedor,apertura:row.apertura,cierre:row.cierre,cerrado:row.cerrado,efectivoInicial:row.efectivo_inicial||0,efectivoFinal:row.efectivo_final,esperado:row.esperado,diferencia:row.diferencia,totalVendido:row.total_vendido||0,cantVentas:row.cant_ventas||0,nota:row.nota||'',obs:row.obs||''});
+      });changed=true;
+    }
+
+    if(cRes.data){const r=cRes.data.find(c=>c.key==='adminPin');if(r){state.adminPin=r.value;changed=true;}}
+    if(changed){saveState();renderAll();buildLoginSelect();}
+    toast('☁ Conectado a Supabase','ok');
+  }catch(e){console.warn('Supabase error:',e);}
+}
+
+/* ── Hooks: sincronizar en cada acción importante ── */
+// Checkout
+const _cartCheckout=document.getElementById('cartCheckout');
+_cartCheckout.addEventListener('click',()=>{
+  setTimeout(async()=>{
+    const sale=state.sales[0];
+    if(sale)await sbUpsert('ventas',toVentaRow(sale));
+    for(const p of state.products)await sbUpsert('productos',toProductRow(p));
+  },200);
+},true);
+
+// Guardar producto
+document.getElementById('modalSave').addEventListener('click',()=>{
+  setTimeout(async()=>{
+    const p=editingId?state.products.find(x=>x.id===editingId):state.products[state.products.length-1];
+    if(p)await sbUpsert('productos',toProductRow(p));
+  },200);
+},true);
+
+// +Stock
+document.querySelectorAll('[data-act="add"]').forEach(b=>{
+  b.addEventListener('click',async()=>{
+    setTimeout(async()=>{
+      const p=state.products.find(x=>x.id===b.dataset.id);
+      if(p)await sbUpsert('productos',toProductRow(p));
+    },300);
+  });
+});
+
+// Abrir turno
+document.getElementById('confirmarAbrirTurno').addEventListener('click',()=>{
+  setTimeout(async()=>{const t=state.turnos[0];if(t&&!t.cerrado)await sbUpsert('turnos',toTurnoRow(t));},200);
+},true);
+
+// Cerrar turno
+document.getElementById('confirmarCerrarTurno').addEventListener('click',()=>{
+  setTimeout(async()=>{
+    const t=state.turnos.find(x=>x.cerrado&&x.userId===session.userId);
+    if(t)await sbUpsert('turnos',toTurnoRow(t));
+  },400);
+},true);
+
+// Vendedor
+document.getElementById('vModalSave').addEventListener('click',()=>{
+  setTimeout(async()=>{
+    const v=editingVend?state.vendedores.find(x=>x.id===editingVend):state.vendedores[state.vendedores.length-1];
+    if(v)await sbUpsert('vendedores',toVendRow(v));
+  },200);
+},true);
+
+// Pin admin
+document.getElementById('cambiarPinAdminBtn').addEventListener('click',()=>{
+  setTimeout(async()=>{await sbUpsert('config',{key:'adminPin',value:state.adminPin});},200);
+},true);
+
+// Botón sync manual
+function addSyncButton(){
+  if(document.getElementById('syncBtn'))return;
+  const btn=document.createElement('button');
+  btn.id='syncBtn';btn.className='icon-btn';
+  btn.textContent='↑↓ Sync';
+  btn.addEventListener('click',async()=>{
+    btn.textContent='↻…';btn.disabled=true;
+    await flushQueue();await loadFromSupabase();
+    btn.textContent='↑↓ Sync';btn.disabled=false;
+  });
+  document.querySelector('.topbar .right').appendChild(btn);
+}
+
+// Sync periódico: 90 segundos
+setInterval(async()=>{
+  if(!isOnline)return;
+  await flushQueue();
+  if(session.role==='admin')await loadFromSupabase();
+},90000);
+
+// Arrancar
+updateOnlineIndicator();
+setTimeout(loadFromSupabase,800);
+
+// Hook enterApp para agregar botón sync al loguear
+const origEnterApp=window.enterApp||enterApp;
+window.enterApp=function(){
+  origEnterApp();
+  setTimeout(()=>{addSyncButton();updateOnlineIndicator();loadFromSupabase();},200);
+};
+
 
 <script>
 if('serviceWorker' in navigator){
