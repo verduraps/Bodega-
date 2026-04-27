@@ -321,6 +321,7 @@
     <button class="tab admin-only" data-panel="turnos"><span class="num">05</span>Turnos</button>
     <button class="tab admin-only" data-panel="alertas"><span class="num">06</span>Stock bajo</button>
     <button class="tab admin-only" data-panel="vendedores"><span class="num">07</span>Vendedores</button>
+    <button class="tab admin-only" data-panel="backup"><span class="num">08</span>Backup</button>
   </nav>
 
   <main>
@@ -489,10 +490,8 @@
         <h2>Gestión <em>de vendedores</em></h2>
         <div class="meta">PINs y accesos</div>
       </div>
-      <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px">
+      <div style="margin-bottom:16px">
         <button class="btn-primary" id="addVendedorBtn">+ Nuevo vendedor</button>
-        <button class="btn-ghost" id="exportarDatosBtn">⬇ Exportar datos</button>
-        <label class="btn-ghost" style="cursor:pointer" id="importarLabel">⬆ Importar datos<input type="file" id="importarDatosInput" accept=".json" style="display:none"></label>
       </div>
       <div class="vend-grid" id="vendGrid"></div>
       <div class="card" style="margin-top:8px;background:rgba(212,84,27,.05);border-color:rgba(212,84,27,.3)">
@@ -502,6 +501,47 @@
         <button class="btn-ghost" style="margin-top:12px" id="cambiarPinAdminBtn">Cambiar PIN admin</button>
       </div>
     </section>
+    <!-- ════ BACKUP ════ -->
+    <section class="panel admin-only" id="panel-backup">
+      <div class="section-head">
+        <h2>Backup <em>de datos</em></h2>
+        <div class="meta">Exportá e importá todos los datos de la app</div>
+      </div>
+
+      <!-- EXPORTAR -->
+      <div class="card" style="margin-bottom:20px">
+        <h3>⬇ Exportar datos <span class="accent">guardar backup</span></h3>
+        <p style="font-size:14px;color:var(--muted);margin-bottom:20px;line-height:1.6">
+          Descarga un archivo con <strong style="color:var(--paper)">todos los datos</strong> de la app: productos, ventas, turnos, vendedores y configuración.<br>
+          Guardalo en Google Drive, WhatsApp o donde quieras como respaldo.
+        </p>
+        <div style="background:var(--bg);border:1px solid var(--line);padding:16px;margin-bottom:20px;font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--muted)">
+          <div>📦 Productos: <span id="bkProductos" style="color:var(--paper)">0</span></div>
+          <div style="margin-top:6px">💰 Ventas: <span id="bkVentas" style="color:var(--paper)">0</span></div>
+          <div style="margin-top:6px">⏱ Turnos: <span id="bkTurnos" style="color:var(--paper)">0</span></div>
+          <div style="margin-top:6px">👤 Vendedores: <span id="bkVendedores" style="color:var(--paper)">0</span></div>
+          <div style="margin-top:6px">🕐 Último backup: <span id="bkUltimo" style="color:var(--accent-2)">Nunca</span></div>
+        </div>
+        <button class="btn-primary" id="exportarDatosBtn" style="padding:16px 32px;font-size:13px">⬇ Descargar backup ahora</button>
+      </div>
+
+      <!-- IMPORTAR -->
+      <div class="card">
+        <h3>⬆ Importar datos <span class="accent">restaurar backup</span></h3>
+        <p style="font-size:14px;color:var(--muted);margin-bottom:8px;line-height:1.6">
+          Restaura un backup guardado anteriormente.<br>
+          <strong style="color:var(--accent)">⚠ Atención:</strong> esto reemplaza todos los datos actuales con los del backup.
+        </p>
+        <div style="background:rgba(168,32,31,.08);border:1px solid rgba(168,32,31,.3);padding:14px;margin-bottom:20px;font-family:'JetBrains Mono',monospace;font-size:11px;color:#f87171">
+          ⚠ Hacé un EXPORTAR primero antes de importar, por si acaso.
+        </div>
+        <label class="btn-ghost" style="cursor:pointer;display:inline-block;padding:16px 32px;font-size:13px">
+          ⬆ Seleccionar archivo de backup
+          <input type="file" id="importarDatosInput" accept=".json" style="display:none">
+        </label>
+      </div>
+    </section>
+
   </main>
 </div>
 
@@ -1641,8 +1681,20 @@ document.getElementById('cambiarPinAdminBtn').addEventListener('click',()=>{
 function renderAll(){
   renderProducts();renderPOS();renderCart();
   renderDashboard();renderVentas();renderTurnos();
-  renderAlertas();renderVendedores();
+  renderAlertas();renderVendedores();renderBackup();
   renderTurnoStatus();
+}
+function renderBackup(){
+  const el_p=document.getElementById('bkProductos');
+  if(!el_p)return;
+  document.getElementById('bkProductos').textContent=state.products.length;
+  document.getElementById('bkVentas').textContent=state.sales.length;
+  document.getElementById('bkTurnos').textContent=state.turnos.length;
+  document.getElementById('bkVendedores').textContent=state.vendedores.length;
+  const lastBk=localStorage.getItem('bodega_last_backup');
+  document.getElementById('bkUltimo').textContent=lastBk
+    ?new Date(lastBk).toLocaleString('es-PY',{day:'2-digit',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'})
+    :'Nunca';
 }
 
 /* INIT */
@@ -1671,6 +1723,8 @@ document.getElementById('exportarDatosBtn').addEventListener('click', () => {
   a.download = 'bodega-backup-' + fecha + '.json';
   a.click();
   URL.revokeObjectURL(url);
+  localStorage.setItem('bodega_last_backup', new Date().toISOString());
+  renderBackup();
   toast('✅ Datos exportados correctamente', 'ok');
 });
 
