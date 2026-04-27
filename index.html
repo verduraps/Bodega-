@@ -257,6 +257,26 @@
   ::-webkit-scrollbar-track{background:var(--bg)}
   ::-webkit-scrollbar-thumb{background:var(--line-strong)}
   ::-webkit-scrollbar-thumb:hover{background:var(--accent)}
+  /* ── TABLA STOCK EDITABLE ── */
+  .editable-cell{
+    background:transparent;border:none;border-bottom:1px solid transparent;
+    color:var(--paper);font-family:'Manrope',sans-serif;font-size:13px;
+    width:100%;padding:4px 6px;outline:none;text-align:right;
+  }
+  .editable-cell:focus{
+    border-bottom-color:var(--accent);background:rgba(212,84,27,.08);
+  }
+  .editable-cell.name-cell{text-align:left;}
+  .gain-cell{font-family:'JetBrains Mono',monospace;font-size:12px;font-weight:700}
+  .gain-cell.good{color:#5fca6e}
+  .gain-cell.mid{color:var(--accent-2)}
+  .gain-cell.low{color:var(--accent)}
+  .gain-cell.bad{color:var(--red)}
+  #stockTable td{padding:8px 10px;vertical-align:middle}
+  #stockTable .cat-pill{font-family:'JetBrains Mono',monospace;font-size:9px;letter-spacing:1.5px;text-transform:uppercase;padding:2px 7px;border:1px solid var(--line-strong);color:var(--muted)}
+  .vendedor-grid-wrap{display:block}
+  .admin-only .vendedor-grid-wrap{display:none}
+
   .hidden-role{display:none!important}
   @media print{.no-print{display:none!important}.ticket{max-width:100%}}
 </style>
@@ -367,7 +387,7 @@
     <section class="panel" id="panel-stock">
       <div class="section-head">
         <h2>Productos <em>en stock</em></h2>
-        <div class="meta"><span id="stockCount">0</span> productos · <span id="stockUnits">0</span> u.</div>
+        <div class="meta"><span id="stockCount">0</span> productos · Inversión: <span id="stockInversion">Gs. 0</span></div>
       </div>
       <div class="toolbar">
         <input type="text" class="search" id="stockSearch" placeholder="Buscar productos…">
@@ -377,9 +397,44 @@
         <button class="filter-chip" data-cat="cigarrillo">Cigarrillo</button>
         <button class="filter-chip" data-cat="whisky">Whisky</button>
         <button class="filter-chip" data-cat="otros">Otros</button>
+        <button class="btn-ghost admin-only" id="descargarListaBtn">🖨 PDF</button>
         <button class="btn-primary admin-only" id="addProductBtn">+ Producto</button>
       </div>
-      <div class="product-grid" id="productGrid"></div>
+
+      <!-- TABLA ADMIN con precios -->
+      <div class="admin-only">
+        <div class="table-wrap">
+          <table id="stockTable">
+            <thead>
+              <tr>
+                <th>Categoría</th>
+                <th>Producto</th>
+                <th>Tamaño</th>
+                <th>P. Compra (Gs.)</th>
+                <th>Cantidad</th>
+                <th>Total compra</th>
+                <th>P. Venta (Gs.)</th>
+                <th>% Ganancia</th>
+                <th>Stock</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody id="stockTbody"></tbody>
+            <tfoot>
+              <tr style="background:rgba(212,84,27,.1);border-top:2px solid var(--accent)">
+                <td colspan="5" style="font-family:Fraunces,serif;font-weight:600;font-size:16px;padding:14px 16px">TOTAL INVERSIÓN</td>
+                <td id="totalInversionFoot" style="font-family:Fraunces,serif;font-weight:700;font-size:18px;color:var(--accent-2);padding:14px 16px"></td>
+                <td colspan="4"></td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      </div>
+
+      <!-- GRILLA VENDEDOR (sin precios de compra) -->
+      <div class="hidden-role vendedor-grid-wrap">
+        <div class="product-grid" id="productGrid"></div>
+      </div>
     </section>
 
     <!-- ════ DASHBOARD ════ -->
@@ -739,9 +794,14 @@ function mergeSeedProducts(){
     const exists=state.products.some(p=>p.cat===seed.cat&&p.brand===seed.brand&&p.variant===seed.variant&&p.size===seed.size);
     if(!exists){
       const id='P'+String(state.nextId++).padStart(4,'0');
-      state.products.push({...seed,id,code:'BOD'+String(state.products.length+1).padStart(4,'0')});
+      state.products.push({...seed,id,code:'BOD'+String(state.products.length+1).padStart(4,'0'),precioCompra:0,cantidadCompra:0});
       changed=true;
     }
+  });
+  // Asegurar que productos existentes tengan los campos nuevos
+  state.products.forEach(p=>{
+    if(p.precioCompra===undefined) p.precioCompra=0;
+    if(p.cantidadCompra===undefined) p.cantidadCompra=0;
   });
   if(changed)saveState();
 }
@@ -958,7 +1018,7 @@ document.getElementById('confirmarCerrarTurno').addEventListener('click',()=>{
 });
 
 /* ═══════════════════════════════════════
-   PRODUCTS
+   PRODUCTS — Tabla editable admin + grilla vendedor
 ═══════════════════════════════════════ */
 const stockSearch=document.getElementById('stockSearch');
 stockSearch.addEventListener('input',renderProducts);
@@ -968,42 +1028,227 @@ document.querySelectorAll('[data-cat]').forEach(b=>{
     b.classList.add('active');activeSCat=b.dataset.cat;renderProducts();
   });
 });
+
+function calcGain(compra, venta){
+  if(!compra||compra<=0) return null;
+  return ((venta - compra) / compra) * 100;
+}
+function gainClass(pct){
+  if(pct===null) return 'mid';
+  if(pct>=30) return 'good';
+  if(pct>=15) return 'mid';
+  if(pct>=0)  return 'low';
+  return 'bad';
+}
+
 function renderProducts(){
   const q=stockSearch.value.toLowerCase().trim();
   let list=state.products.slice();
-  if(activeSCat!=='all')list=list.filter(p=>p.cat===activeSCat);
-  if(q)list=list.filter(p=>(p.brand+' '+p.variant+' '+p.size+' '+p.cat).toLowerCase().includes(q));
-  list.sort((a,b)=>a.brand.localeCompare(b.brand)||a.variant.localeCompare(b.variant));
-  const adm=session.role==='admin';
-  const grid=document.getElementById('productGrid');
-  grid.innerHTML=list.length?list.map(p=>{
-    const sc=p.stock===0?'zero':p.stock<=p.min?'low':'ok';
-    return`<div class="product">
-      <div class="cat-tag">${p.cat}</div>
-      <div class="brand">${esc(p.brand)}</div>
-      <div class="variant">${esc(p.variant)}</div>
-      <div class="size">${esc(p.size)}</div>
-      <div class="stock-badge ${sc}">${p.stock} u.</div>
-      <div class="price"><span class="gs">Gs.</span>${fmtNum(p.price)}</div>
-      ${adm?`<div class="actions">
-        <button data-act="edit" data-id="${p.id}">Editar</button>
-        <button data-act="add" data-id="${p.id}">+Stock</button>
-        <button data-act="del" data-id="${p.id}">Borrar</button>
-      </div>`:''}
-    </div>`;
-  }).join(''):'<div style="padding:50px;grid-column:1/-1;text-align:center;color:var(--muted);font-style:italic">Sin resultados</div>';
+  if(activeSCat!=='all') list=list.filter(p=>p.cat===activeSCat);
+  if(q) list=list.filter(p=>(p.brand+' '+p.variant+' '+p.size+' '+p.cat).toLowerCase().includes(q));
+  list.sort((a,b)=>a.cat.localeCompare(b.cat)||a.brand.localeCompare(b.brand)||a.variant.localeCompare(b.variant));
+
   document.getElementById('stockCount').textContent=state.products.length;
-  document.getElementById('stockUnits').textContent=state.products.reduce((s,p)=>s+p.stock,0).toLocaleString('es-PY');
-  grid.querySelectorAll('[data-act]').forEach(btn=>{
+
+  // ── GRILLA VENDEDOR (igual que antes, sin precio de compra) ──
+  const grid=document.getElementById('productGrid');
+  if(grid){
+    grid.innerHTML=list.length?list.map(p=>{
+      const sc=p.stock===0?'zero':p.stock<=p.min?'low':'ok';
+      return`<div class="product">
+        <div class="cat-tag">${p.cat}</div>
+        <div class="brand">${esc(p.brand)}</div>
+        <div class="variant">${esc(p.variant)}</div>
+        <div class="size">${esc(p.size)}</div>
+        <div class="stock-badge ${sc}">${p.stock} u.</div>
+        <div class="price"><span class="gs">Gs.</span>${fmtNum(p.price)}</div>
+      </div>`;
+    }).join(''):'<div style="padding:50px;grid-column:1/-1;text-align:center;color:var(--muted);font-style:italic">Sin resultados</div>';
+  }
+
+  if(session.role!=='admin') return;
+
+  // ── TABLA ADMIN EDITABLE ──
+  const tbody=document.getElementById('stockTbody');
+  if(!tbody) return;
+
+  let totalInversion=0;
+
+  tbody.innerHTML=list.map(p=>{
+    const compra = p.precioCompra||0;
+    const cantidad = p.cantidadCompra||0;
+    const totalCompra = compra * cantidad;
+    totalInversion += totalCompra;
+    const gain = calcGain(compra, p.price);
+    const gainPct = gain!==null ? gain.toFixed(1)+'%' : '—';
+    const gClass = gainClass(gain);
+    const sc=p.stock===0?'zero':p.stock<=p.min?'low':'ok';
+    return`<tr data-id="${p.id}">
+      <td><span class="cat-pill">${esc(p.cat)}</span></td>
+      <td>
+        <input class="editable-cell name-cell" data-field="brand" value="${esc(p.brand)}" title="Marca">
+        <input class="editable-cell name-cell" data-field="variant" value="${esc(p.variant)}" style="font-size:11px;color:var(--muted)" title="Variante">
+      </td>
+      <td>
+        <input class="editable-cell name-cell" data-field="size" value="${esc(p.size)}" style="font-size:11px" title="Tamaño">
+      </td>
+      <td>
+        <input class="editable-cell" type="number" data-field="precioCompra" value="${compra||''}" placeholder="0" min="0" step="100" title="Precio de compra">
+      </td>
+      <td>
+        <input class="editable-cell" type="number" data-field="cantidadCompra" value="${cantidad||''}" placeholder="0" min="0" title="Cantidad comprada">
+      </td>
+      <td style="font-family:Fraunces,serif;font-weight:600;font-size:14px;color:var(--accent-2);text-align:right">
+        ${totalCompra>0?fmt(totalCompra):'—'}
+      </td>
+      <td>
+        <input class="editable-cell" type="number" data-field="price" value="${p.price||''}" placeholder="0" min="0" step="100" title="Precio de venta">
+      </td>
+      <td class="gain-cell ${gClass}">${gainPct}</td>
+      <td><span class="stock-badge ${sc}" style="position:static;display:inline-block">${p.stock} u.</span></td>
+      <td>
+        <button data-act="add" data-id="${p.id}" class="icon-btn" title="+Stock">+</button>
+        <button data-act="del" data-id="${p.id}" class="icon-btn" title="Borrar" style="color:var(--red);border-color:var(--red)">✕</button>
+      </td>
+    </tr>`;
+  }).join('');
+
+  // Total inversión
+  const totalEl=document.getElementById('totalInversionFoot');
+  const invEl=document.getElementById('stockInversion');
+  if(totalEl) totalEl.textContent=fmt(totalInversion);
+  if(invEl) invEl.textContent=fmt(totalInversion);
+
+  // Eventos en celdas editables — guardar al perder el foco
+  tbody.querySelectorAll('.editable-cell').forEach(input=>{
+    input.addEventListener('change', function(){
+      const row=this.closest('tr');
+      const id=row.dataset.id;
+      const field=this.dataset.field;
+      const p=state.products.find(x=>x.id===id);
+      if(!p) return;
+      if(field==='price'||field==='precioCompra'||field==='cantidadCompra'){
+        p[field]=+this.value||0;
+      } else {
+        p[field]=this.value.trim();
+      }
+      saveState();
+      // Recalcular fila sin re-renderizar toda la tabla
+      const compra=p.precioCompra||0;
+      const cantidad=p.cantidadCompra||0;
+      const totalCompra=compra*cantidad;
+      const gain=calcGain(compra,p.price);
+      const gainPct=gain!==null?gain.toFixed(1)+'%':'—';
+      const gClass=gainClass(gain);
+      // Actualizar total compra en la fila
+      const cells=row.querySelectorAll('td');
+      cells[5].textContent=totalCompra>0?fmt(totalCompra):'—';
+      const gainCell=cells[7];
+      gainCell.textContent=gainPct;
+      gainCell.className='gain-cell '+gClass;
+      // Recalcular total global
+      let newTotal=0;
+      state.products.forEach(x=>{ newTotal+=(x.precioCompra||0)*(x.cantidadCompra||0); });
+      if(totalEl) totalEl.textContent=fmt(newTotal);
+      if(invEl) invEl.textContent=fmt(newTotal);
+      // Si cambió el precio de venta, actualizar POS también
+      if(field==='price') renderPOS();
+      // Sync Supabase si aplica
+      if(typeof syncProducto==='function') syncProducto(p);
+    });
+  });
+
+  // Botones +Stock y Borrar
+  tbody.querySelectorAll('[data-act]').forEach(btn=>{
     btn.addEventListener('click',e=>{
       e.stopPropagation();
-      const id=btn.dataset.id,act=btn.dataset.act;
-      if(act==='edit')openEditModal(id);
-      else if(act==='add')quickAddStock(id);
-      else if(act==='del')deleteProduct(id);
+      const id=btn.dataset.id, act=btn.dataset.act;
+      if(act==='add') quickAddStock(id);
+      else if(act==='del') deleteProduct(id);
     });
   });
 }
+
+/* ── PDF de la lista de productos ── */
+document.getElementById('descargarListaBtn').addEventListener('click',()=>{
+  const q=stockSearch.value.toLowerCase().trim();
+  let list=state.products.slice();
+  if(activeSCat!=='all') list=list.filter(p=>p.cat===activeSCat);
+  if(q) list=list.filter(p=>(p.brand+' '+p.variant+' '+p.size).toLowerCase().includes(q));
+  list.sort((a,b)=>a.cat.localeCompare(b.cat)||a.brand.localeCompare(b.brand));
+
+  let totalInv=0;
+  list.forEach(p=>{ totalInv+=(p.precioCompra||0)*(p.cantidadCompra||0); });
+
+  const filas=list.map(p=>{
+    const compra=p.precioCompra||0;
+    const cantidad=p.cantidadCompra||0;
+    const totalCompra=compra*cantidad;
+    const gain=calcGain(compra,p.price);
+    const gainPct=gain!==null?gain.toFixed(1)+'%':'—';
+    const gainColor=gain===null?'#888':gain>=30?'#2d7a3a':gain>=15?'#b87a00':gain>=0?'#c45010':'#a8201f';
+    const scColor=p.stock===0?'#a8201f':p.stock<=p.min?'#c45010':'#2d7a3a';
+    return`<tr>
+      <td style="font-size:10px;text-transform:uppercase;letter-spacing:1px;color:#7a7060">${p.cat}</td>
+      <td><strong>${p.brand}</strong> ${p.variant}</td>
+      <td style="font-size:11px;color:#7a7060">${p.size}</td>
+      <td style="text-align:right">Gs. ${compra>0?compra.toLocaleString('es-PY'):'—'}</td>
+      <td style="text-align:center">${cantidad>0?cantidad:'—'}</td>
+      <td style="text-align:right;font-weight:600">${totalCompra>0?'Gs. '+totalCompra.toLocaleString('es-PY'):'—'}</td>
+      <td style="text-align:right;font-weight:600">Gs. ${p.price.toLocaleString('es-PY')}</td>
+      <td style="text-align:center;font-weight:700;color:${gainColor}">${gainPct}</td>
+      <td style="text-align:center;font-weight:700;color:${scColor}">${p.stock}</td>
+    </tr>`;
+  }).join('');
+
+  const html=`<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8">
+<title>Lista de Productos — Bodega</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:Georgia,serif;color:#1a1814;background:#fff;padding:28px;font-size:12px}
+  .header{text-align:center;border-bottom:3px double #1a1814;padding-bottom:16px;margin-bottom:20px}
+  .header h1{font-size:24px;font-weight:700}
+  .header .sub{font-family:monospace;font-size:10px;letter-spacing:2px;text-transform:uppercase;color:#7a7060;margin-top:5px}
+  table{width:100%;border-collapse:collapse;font-size:11px}
+  th{background:#1a1814;color:#f4ede0;padding:8px 10px;text-align:left;font-family:monospace;font-size:9px;letter-spacing:1.5px;text-transform:uppercase}
+  th.r{text-align:right} th.c{text-align:center}
+  td{padding:7px 10px;border-bottom:1px solid #eee;vertical-align:middle}
+  tr:nth-child(even) td{background:#faf8f5}
+  .cat-break td{background:#f0ede8;font-family:monospace;font-size:9px;letter-spacing:2px;text-transform:uppercase;color:#7a7060;padding:5px 10px;font-weight:700}
+  tfoot td{background:#fff8f0;border-top:2px solid #1a1814;font-weight:700;padding:10px}
+  .footer{margin-top:20px;text-align:center;font-family:monospace;font-size:10px;color:#aaa;border-top:1px solid #eee;padding-top:12px}
+  @media print{body{padding:10px}}
+</style></head><body>
+<div class="header">
+  <div class="sub">Bodega Manager · Lista de Precios</div>
+  <h1>Productos en Stock</h1>
+  <div class="sub" style="margin-top:6px">Generado: ${new Date().toLocaleString('es-PY')} · ${list.length} productos</div>
+</div>
+<table>
+  <thead>
+    <tr>
+      <th>Cat.</th><th>Producto</th><th>Tamaño</th>
+      <th class="r">P. Compra</th><th class="c">Cantidad</th><th class="r">Total compra</th>
+      <th class="r">P. Venta</th><th class="c">% Ganancia</th><th class="c">Stock</th>
+    </tr>
+  </thead>
+  <tbody>${filas}</tbody>
+  <tfoot>
+    <tr>
+      <td colspan="5">TOTAL INVERSIÓN EN COMPRAS</td>
+      <td style="text-align:right;font-size:14px;color:#d4541b">Gs. ${totalInv.toLocaleString('es-PY')}</td>
+      <td colspan="3"></td>
+    </tr>
+  </tfoot>
+</table>
+<div class="footer">Bodega Manager · Confidencial — Solo para administración</div>
+<script>window.onload=()=>window.print()<\/script>
+</body></html>`;
+
+  const w=window.open('','_blank','width=1000,height=700');
+  w.document.write(html);
+  w.document.close();
+});
 
 /* MODAL PRODUCTO */
 const modalBg=document.getElementById('modalBg');
