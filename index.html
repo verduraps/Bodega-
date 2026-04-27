@@ -489,8 +489,10 @@
         <h2>Gestión <em>de vendedores</em></h2>
         <div class="meta">PINs y accesos</div>
       </div>
-      <div style="margin-bottom:16px">
+      <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px">
         <button class="btn-primary" id="addVendedorBtn">+ Nuevo vendedor</button>
+        <button class="btn-ghost" id="exportarDatosBtn">⬇ Exportar datos</button>
+        <label class="btn-ghost" style="cursor:pointer" id="importarLabel">⬆ Importar datos<input type="file" id="importarDatosInput" accept=".json" style="display:none"></label>
       </div>
       <div class="vend-grid" id="vendGrid"></div>
       <div class="card" style="margin-top:8px;background:rgba(212,84,27,.05);border-color:rgba(212,84,27,.3)">
@@ -1645,6 +1647,86 @@ function renderAll(){
 
 /* INIT */
 buildLoginSelect();
+
+/* ═══════════════════════════════════════
+   EXPORTAR / IMPORTAR DATOS
+═══════════════════════════════════════ */
+
+document.getElementById('exportarDatosBtn').addEventListener('click', () => {
+  const exportData = {
+    version: '1.0',
+    fecha: new Date().toISOString(),
+    productos: state.products,
+    ventas: state.sales,
+    turnos: state.turnos,
+    vendedores: state.vendedores,
+    adminPin: state.adminPin,
+  };
+  const json = JSON.stringify(exportData, null, 2);
+  const blob = new Blob([json], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  const fecha = new Date().toLocaleDateString('es-PY').replace(/\//g, '-');
+  a.href = url;
+  a.download = 'bodega-backup-' + fecha + '.json';
+  a.click();
+  URL.revokeObjectURL(url);
+  toast('✅ Datos exportados correctamente', 'ok');
+});
+
+document.getElementById('importarDatosInput').addEventListener('change', function () {
+  const file = this.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = function (e) {
+    try {
+      const data = JSON.parse(e.target.result);
+      // Validar que sea un backup válido
+      if (!data.version || !data.productos) {
+        toast('❌ Archivo inválido — no es un backup de Bodega Manager', 'bad');
+        return;
+      }
+      if (!confirm('⚠️ Esto va a reemplazar TODOS los datos actuales con el backup.\n\n¿Estás seguro?')) return;
+
+      // Restaurar datos
+      state.products  = data.productos  || [];
+      state.sales     = data.ventas     || [];
+      state.turnos    = data.turnos     || [];
+      state.vendedores= data.vendedores || [];
+      if (data.adminPin) state.adminPin = data.adminPin;
+
+      // Recalcular nextIds para evitar colisiones
+      const maxProd = state.products.reduce((m,p) => {
+        const n = parseInt(p.id.replace('P','')) || 0; return n > m ? n : m;
+      }, 0);
+      const maxSale = state.sales.reduce((m,s) => {
+        const n = parseInt(s.id.replace('V','')) || 0; return n > m ? n : m;
+      }, 0);
+      const maxTurno = state.turnos.reduce((m,t) => {
+        const n = parseInt(t.id.replace('T','')) || 0; return n > m ? n : m;
+      }, 0);
+      const maxVend = state.vendedores.reduce((m,v) => {
+        const n = parseInt(v.id.replace('V','')) || 0; return n > m ? n : m;
+      }, 0);
+      state.nextId    = maxProd  + 1;
+      state.nextSale  = maxSale  + 1;
+      state.nextTurno = maxTurno + 1;
+      state.nextVend  = maxVend  + 1;
+
+      saveState();
+      renderAll();
+      buildLoginSelect();
+
+      const fechaBackup = data.fecha ? new Date(data.fecha).toLocaleDateString('es-PY') : 'desconocida';
+      toast('✅ Backup restaurado — ' + state.products.length + ' productos, ' + state.sales.length + ' ventas', 'ok');
+      // Limpiar el input para poder importar de nuevo si hace falta
+      document.getElementById('importarDatosInput').value = '';
+    } catch (err) {
+      toast('❌ Error al leer el archivo', 'bad');
+    }
+  };
+  reader.readAsText(file);
+});
 
 </script>
 
